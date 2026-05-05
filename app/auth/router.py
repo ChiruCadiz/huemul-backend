@@ -29,11 +29,18 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="El correo debe pertenecer a @uandresbello.edu o @unab.cl"
         )
 
-    # 2. Buscar usuario 
+    # 2. Buscar usuario — si no existe, crearlo automáticamente con rol "user"
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    # 3. Emitir JWT
+    if not user:
+        username = body.email.strip().lower().split("@")[0]
+        user = User(username=username, email=body.email, role="user")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    # 3. Emitir JWT con id, username, role y email
     token = create_access_token({
         "sub": str(user.id),
         "username": user.username,
@@ -49,6 +56,4 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/logout")
 async def logout():
-    # JWT es stateless: el cliente descarta el token localmente.
-    # Mejora futura: lista negra en Redis.
     return {"message": "Sesión cerrada correctamente."}
