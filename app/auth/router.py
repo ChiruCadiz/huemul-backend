@@ -46,3 +46,9 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         role=user.role,
         email=user.email
     )
+
+@router.post("/logout")
+async def logout():
+    # JWT es stateless: el cliente descarta el token localmente.
+    # Mejora futura: lista negra en Redis.
+    return {"message": "Sesión cerrada correctamente."}
