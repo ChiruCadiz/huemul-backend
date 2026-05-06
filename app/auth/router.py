@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from loguru import logger
 from app.db.database import get_db
 from app.db.models import User
 from app.auth.service import validate_university_credentials
@@ -24,12 +25,13 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     # 1. Validar dominio universitario
     valid = await validate_university_credentials(body.email, body.password)
     if not valid:
+        logger.warning(f"Login fallido — dominio inválido: {body.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="El correo debe pertenecer a @uandresbello.edu o @unab.cl"
         )
 
-    # 2. Buscar usuario — si no existe, crearlo automáticamente con rol "user"
+    # 2. Buscar usuario — si no existe, crearlo automáticamente
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
@@ -39,8 +41,9 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         db.add(user)
         await db.commit()
         await db.refresh(user)
+        logger.info(f"Usuario creado automáticamente: {body.email} | role=user")
 
-    # 3. Emitir JWT con id, username, role y email
+    # 3. Emitir JWT
     token = create_access_token({
         "sub": str(user.id),
         "username": user.username,
@@ -48,12 +51,10 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         "email": user.email
     })
 
-    return LoginResponse(
-        access_token=token,
-        role=user.role,
-        email=user.email
-    )
+    logger.info(f"Login exitoso: {body.email} | role={user.role}")
+    return LoginResponse(access_token=token, role=user.role, email=user.email)
 
 @router.post("/logout")
 async def logout():
+    logger.info("Logout solicitado.")
     return {"message": "Sesión cerrada correctamente."}

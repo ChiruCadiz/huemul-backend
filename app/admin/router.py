@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from loguru import logger
 from app.db.database import get_db
 from app.db.models import Config, User
 from app.middleware.auth import require_admin
@@ -18,41 +19,39 @@ class SystemPromptResponse(BaseModel):
 @router.get("/config", response_model=SystemPromptResponse)
 async def get_config(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin)
+    current_user: User = Depends(require_admin)
 ):
-    result = await db.execute(
-        select(Config).where(Config.key == "system_prompt")
-    )
+    result = await db.execute(select(Config).where(Config.key == "system_prompt"))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Configuración no encontrada.")
+    logger.info(f"System prompt consultado por: {current_user.email}")
     return SystemPromptResponse(key=config.key, value=config.value)
 
 @router.put("/config", response_model=SystemPromptResponse)
 async def update_config(
     body: SystemPromptUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin)
+    current_user: User = Depends(require_admin)
 ):
-    result = await db.execute(
-        select(Config).where(Config.key == "system_prompt")
-    )
+    result = await db.execute(select(Config).where(Config.key == "system_prompt"))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="Configuración no encontrada.")
-
     config.value = body.value
     await db.commit()
     await db.refresh(config)
+    logger.info(f"System prompt actualizado por: {current_user.email}")
     return SystemPromptResponse(key=config.key, value=config.value)
 
 @router.get("/users")
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin)
+    current_user: User = Depends(require_admin)
 ):
     result = await db.execute(select(User))
     users = result.scalars().all()
+    logger.info(f"Lista de usuarios consultada por: {current_user.email}")
     return [{"id": u.id, "username": u.username, "email": u.email, "role": u.role} for u in users]
 
 @router.put("/users/{user_id}/role")
@@ -60,16 +59,18 @@ async def update_user_role(
     user_id: int,
     role: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin)
+    current_user: User = Depends(require_admin)
 ):
     if role not in ("user", "admin"):
         raise HTTPException(status_code=400, detail="Rol inválido. Use 'user' o 'admin'.")
-
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
-
     user.role = role
     await db.commit()
+    logger.info(
+        f"Rol actualizado — usuario: {user.email} "
+        f"| nuevo rol: {role} | por: {current_user.email}"
+    )
     return {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
