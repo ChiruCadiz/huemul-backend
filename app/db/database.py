@@ -5,7 +5,10 @@ from app.config import settings
 engine = create_async_engine(
     settings.database_url,
     echo=True,
-    connect_args={"ssl": "require"}  # requerido por Supabase
+    connect_args={
+        "ssl": "require",
+        "statement_cache_size": 0,  # ← soluciona incompatibilidad con PgBouncer de Supabase
+    }
 )
 
 AsyncSessionLocal = sessionmaker(

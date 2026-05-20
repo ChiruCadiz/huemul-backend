@@ -6,6 +6,7 @@ from app.auth.router import router as auth_router
 from app.admin.router import router as admin_router
 from app.db.init_db import init_db
 from app.logger import setup_logger, setup_sentry
+from app.memory.redis_client import get_redis, close_redis
 import time
 import sentry_sdk
 
@@ -17,8 +18,10 @@ setup_sentry()
 async def lifespan(app: FastAPI):
     logger.info("Iniciando Huemul Backend...")
     await init_db()
-    logger.info("Base de datos inicializada correctamente.")
+    await get_redis()  # Inicializar Redis al inicio
+    logger.info("Base de datos y Redis inicializados correctamente.")
     yield
+    await close_redis()  # Cerrar conexión a Redis al finalizar
     logger.info("Huemul Backend detenido.")
 
 app = FastAPI(

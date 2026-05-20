@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     jwt_expire_hours: int = 8
     sentry_dsn: str = ""
     environment: str = "development"
-
+    # Redis
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_password: str = ""
+    redis_ttl_hours: int = 24
+    # Ollama
+    ollama_base_url: str = "http://localhost:11434"
 
 settings = Settings()
