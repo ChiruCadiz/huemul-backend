@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 8
-    sentry_dsn: str = ""
     environment: str = "development"
     # Redis
     redis_host: str = "localhost"

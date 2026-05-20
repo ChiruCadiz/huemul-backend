@@ -47,7 +47,6 @@ rich==15.0.0
 rich-toolkit==0.19.7
 rignore==0.7.6
 rsa==4.9.1
-sentry-sdk==2.59.0
 shellingham==1.5.4
 six==1.17.0
 SQLAlchemy==2.0.49
