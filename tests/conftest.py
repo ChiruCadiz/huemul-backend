@@ -1,80 +1,117 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 import pytest
-import json
-from app.memory.session import (
-    get_session_history,
-    append_to_history,
-    clear_session,
+import pytest_asyncio
+import redis.asyncio as redis_lib
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from app.main import app
+from app.db.database import Base, get_db
+from app.db.models import User, Config
+from app.auth.jwt import create_access_token
+
+# ── Base de datos en memoria para tests ───────────────────────
+DATABASE_URL_TEST = "sqlite+aiosqlite:///:memory:"
+engine_test = create_async_engine(DATABASE_URL_TEST, echo=False)
+AsyncSessionTest = sessionmaker(
+    engine_test, class_=AsyncSession, expire_on_commit=False
 )
-from app.memory.redis_client import get_redis
 
-SESSION_ID = "test-session-sprint2"
+async def override_get_db():
+    async with AsyncSessionTest() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
-@pytest.mark.asyncio
-async def test_historial_vacio_en_sesion_nueva():
-    """Una sesión nueva debe retornar historial vacío."""
-    history = await get_session_history(SESSION_ID)
-    assert history == []
+app.dependency_overrides[get_db] = override_get_db
 
-@pytest.mark.asyncio
-async def test_append_mensaje_usuario():
-    """Agregar un mensaje de usuario debe guardarse correctamente."""
-    await append_to_history(SESSION_ID, "user", "Hola, ¿qué es Python?")
-    history = await get_session_history(SESSION_ID)
-    assert len(history) == 1
-    assert history[0]["role"] == "user"
-    assert history[0]["content"] == "Hola, ¿qué es Python?"
+@pytest_asyncio.fixture(autouse=True)
+async def setup_db():
+    """Crea tablas antes de cada test y las elimina al terminar."""
+    async with engine_test.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
-@pytest.mark.asyncio
-async def test_append_mensaje_asistente():
-    """Agregar mensajes de ambos roles debe mantener el orden correcto."""
-    await append_to_history(SESSION_ID, "user", "¿Qué es Python?")
-    await append_to_history(SESSION_ID, "assistant", "Python es un lenguaje de programación.")
-    history = await get_session_history(SESSION_ID)
-    assert len(history) == 2
-    assert history[0]["role"] == "user"
-    assert history[1]["role"] == "assistant"
+    async with AsyncSessionTest() as session:
+        session.add(Config(key="system_prompt", value="Prompt de prueba."))
+        session.add(Config(key="default_model", value="codellama"))
+        await session.commit()
 
-@pytest.mark.asyncio
-async def test_historial_acumula_mensajes():
-    """El historial debe acumular mensajes en orden cronológico."""
-    await append_to_history(SESSION_ID, "user", "Mensaje 1")
-    await append_to_history(SESSION_ID, "assistant", "Respuesta 1")
-    await append_to_history(SESSION_ID, "user", "Mensaje 2")
-    await append_to_history(SESSION_ID, "assistant", "Respuesta 2")
-    history = await get_session_history(SESSION_ID)
-    assert len(history) == 4
-    assert history[2]["content"] == "Mensaje 2"
-    assert history[3]["content"] == "Respuesta 2"
+    yield
 
-@pytest.mark.asyncio
-async def test_clear_session_elimina_historial():
-    """clear_session debe eliminar todos los mensajes de la sesión."""
-    await append_to_history(SESSION_ID, "user", "Mensaje a eliminar")
-    await clear_session(SESSION_ID)
-    history = await get_session_history(SESSION_ID)
-    assert history == []
+    async with engine_test.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
-@pytest.mark.asyncio
-async def test_ttl_se_asigna_al_guardar():
-    """El TTL debe asignarse al guardar un mensaje (mayor a 0)."""
-    await append_to_history(SESSION_ID, "user", "Mensaje con TTL")
-    redis = await get_redis()
-    ttl = await redis.ttl(f"session:{SESSION_ID}")
-    assert ttl > 0
+@pytest_asyncio.fixture(autouse=True)
+async def setup_redis():
+    """
+    Crea una conexión Redis fresca por test para evitar
+    el error 'Event loop is closed' del singleton.
+    """
+    r = redis_lib.Redis(host="localhost", port=6379, decode_responses=True)
+    # Limpia claves de test antes del test
+    keys = await r.keys("session:test-*")
+    if keys:
+        await r.delete(*keys)
+    yield
+    # Limpia claves de test después del test
+    keys = await r.keys("session:test-*")
+    if keys:
+        await r.delete(*keys)
+    await r.aclose()
 
-@pytest.mark.asyncio
-async def test_sesiones_distintas_no_se_mezclan():
-    """Dos sesiones distintas deben tener historiales independientes."""
-    session_a = "test-session-a"
-    session_b = "test-session-b"
-    await append_to_history(session_a, "user", "Mensaje sesión A")
-    await append_to_history(session_b, "user", "Mensaje sesión B")
-    history_a = await get_session_history(session_a)
-    history_b = await get_session_history(session_b)
-    assert history_a[0]["content"] == "Mensaje sesión A"
-    assert history_b[0]["content"] == "Mensaje sesión B"
-    assert len(history_a) == 1
-    assert len(history_b) == 1
-    # Limpieza
-    await clear_session(session_a)
-    await clear_session(session_b)
+@pytest_asyncio.fixture
+async def client():
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as c:
+        yield c
+
+@pytest_asyncio.fixture
+async def admin_user():
+    async with AsyncSessionTest() as session:
+        user = User(
+            username="admin",
+            email="admin@uandresbello.edu",
+            role="admin"
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+@pytest_asyncio.fixture
+async def regular_user():
+    async with AsyncSessionTest() as session:
+        user = User(
+            username="estudiante",
+            email="estudiante@uandresbello.edu",
+            role="user"
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+@pytest_asyncio.fixture
+def admin_token(admin_user):
+    return create_access_token({
+        "sub": str(admin_user.id),
+        "username": admin_user.username,
+        "role": admin_user.role,
+        "email": admin_user.email
+    })
+
+@pytest_asyncio.fixture
+def user_token(regular_user):
+    return create_access_token({
+        "sub": str(regular_user.id),
+        "username": regular_user.username,
+        "role": regular_user.role,
+        "email": regular_user.email
+    })

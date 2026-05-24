@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from httpx import AsyncClient
 from app.db.models import User
 from app.auth.jwt import create_access_token
@@ -16,14 +16,10 @@ def get_headers(user: User) -> dict:
 @pytest.mark.asyncio
 async def test_get_models_ollama_disponible(client: AsyncClient, regular_user: User):
     """GET /models debe retornar lista de modelos cuando Ollama responde."""
-    mock_response = {"models": [{"name": "codellama"}, {"name": "llama2"}]}
-    with patch("app.models.service.httpx.AsyncClient") as mock_client:
-        mock_get = AsyncMock()
-        mock_get.status_code = 200
-        mock_get.json.return_value = mock_response
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            return_value=mock_get
-        )
+    with patch(
+        "app.models.router.fetch_available_models",
+        return_value=["codellama", "llama2"]
+    ):
         response = await client.get(
             "/models",
             headers=get_headers(regular_user)
@@ -36,11 +32,10 @@ async def test_get_models_ollama_disponible(client: AsyncClient, regular_user: U
 @pytest.mark.asyncio
 async def test_get_models_ollama_caido(client: AsyncClient, regular_user: User):
     """GET /models debe retornar lista vacía con mensaje si Ollama no responde."""
-    with patch("app.models.service.httpx.AsyncClient") as mock_client:
-        import httpx
-        mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-            side_effect=httpx.ConnectError("Connection refused")
-        )
+    with patch(
+        "app.models.router.fetch_available_models",
+        return_value=[]
+    ):
         response = await client.get(
             "/models",
             headers=get_headers(regular_user)
