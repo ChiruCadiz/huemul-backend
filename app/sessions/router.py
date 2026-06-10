@@ -49,3 +49,21 @@ async def post_session(
         created_at=str(session.created_at),
         last_active_at=str(session.last_active_at),
     )
+
+@router.get("", response_model=list[SessionResponse])
+async def get_sessions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    sessions = await list_sessions(current_user.id, db)
+    return [
+        SessionResponse(
+            id=str(s.id),
+            title=s.title,
+            model_used=s.model_used,
+            is_active=s.is_active,
+            created_at=str(s.created_at),
+            last_active_at=str(s.last_active_at),
+        )
+        for s in sessions
+    ]

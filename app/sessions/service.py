@@ -92,3 +92,15 @@ async def create_session(
     await db.refresh(session)
     logger.info(f"Sesión creada — user_id: {user_id} | session: {session.id}")
     return session
+
+async def list_sessions(user_id: int, db: AsyncSession) -> list[Session]:
+    """
+    Retorna todas las sesiones activas del usuario
+    ordenadas por última actividad descendente.
+    """
+    result = await db.execute(
+        select(Session)
+        .where(Session.user_id == user_id, Session.is_active == True)
+        .order_by(Session.last_active_at.desc())
+    )
+    return result.scalars().all()
