@@ -104,3 +104,32 @@ async def list_sessions(user_id: int, db: AsyncSession) -> list[Session]:
         .order_by(Session.last_active_at.desc())
     )
     return result.scalars().all()
+
+async def get_session_detail(
+    session_id: str,
+    user_id: int,
+    db: AsyncSession
+) -> tuple[Session | None, list[dict]]:
+    """
+    Retorna detalle de una sesión y su historial.
+    Carga desde Redis primero, luego desde PostgreSQL si es necesario.
+    """
+    session_uuid = uuid.UUID(session_id)
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_uuid,
+            Session.user_id == user_id,
+            Session.is_active == True
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        return None, []
+
+    from app.memory.session import get_session_history
+    history = await get_session_history(session_id)
+
+    if not history:
+        history = await load_history(session_id, db)
+
+    return session, history

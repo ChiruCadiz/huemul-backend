@@ -67,3 +67,23 @@ async def get_sessions(
         )
         for s in sessions
     ]
+
+@router.get("/{session_id}")
+async def get_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session, history = await get_session_detail(
+        session_id, current_user.id, db
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada.")
+    return {
+        "id": str(session.id),
+        "title": session.title,
+        "model_used": session.model_used,
+        "created_at": str(session.created_at),
+        "last_active_at": str(session.last_active_at),
+        "messages": history,
+    }
