@@ -10,6 +10,7 @@ from app.middleware.auth import get_current_user
 from app.memory.session import get_session_history, append_to_history
 from app.chat.prompt_builder import build_prompt
 from app.chat.service import stream_ollama
+from app.sessions.service import generate_session_title, persist_messages  # ← nuevo
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -59,7 +60,11 @@ async def chat_message(
     # 4. Guardar mensaje del usuario en Redis
     await append_to_history(body.session_id, "user", body.message)
 
-    # 5. Streaming de respuesta + guardar respuesta completa al terminar
+    # 5. Generar título automático en el primer mensaje  ← nuevo
+    if not history:
+        await generate_session_title(body.session_id, body.message, db)
+
+    # 6. Streaming de respuesta + guardar respuesta completa al terminar
     full_response = []
 
     async def generate():
@@ -68,6 +73,7 @@ async def chat_message(
             yield token
         complete = "".join(full_response)
         await append_to_history(body.session_id, "assistant", complete)
+        await persist_messages(body.session_id, db)  # ← nuevo
         logger.info(
             f"Respuesta completada — session: {body.session_id} | chars: {len(complete)}"
         )

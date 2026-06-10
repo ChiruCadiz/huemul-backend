@@ -171,3 +171,25 @@ async def delete_session(
         f"session: {session_id} | user: {user_id}"
     )
     return True
+
+async def generate_session_title(
+    session_id: str,
+    first_message: str,
+    db: AsyncSession
+) -> None:
+    """
+    Genera título automático con las primeras 50 caracteres
+    del primer mensaje del usuario.
+    """
+    title = first_message.strip()[:50]
+    if len(first_message.strip()) > 50:
+        title += "..."
+
+    session_uuid = uuid.UUID(session_id)
+    await db.execute(
+        update(Session)
+        .where(Session.id == session_uuid)
+        .values(title=title, last_active_at=sqlfunc.now())
+    )
+    await db.commit()
+    logger.debug(f"Título generado — session: {session_id} | título: '{title}'")
