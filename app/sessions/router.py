@@ -87,3 +87,17 @@ async def get_session(
         "last_active_at": str(session.last_active_at),
         "messages": history,
     }
+
+@router.delete("/{session_id}")
+async def delete_session_endpoint(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    deleted = await delete_session(session_id, current_user.id, db)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada.")
+    return {
+        "message": "Sesión eliminada correctamente.",
+        "session_id": session_id
+    }

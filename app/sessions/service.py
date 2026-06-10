@@ -133,3 +133,41 @@ async def get_session_detail(
         history = await load_history(session_id, db)
 
     return session, history
+
+async def delete_session(
+    session_id: str,
+    user_id: int,
+    db: AsyncSession
+) -> bool:
+    """
+    Soft delete: marca la sesión como inactiva.
+    Persiste el historial Redis → PostgreSQL antes de cerrar.
+    """
+    session_uuid = uuid.UUID(session_id)
+    result = await db.execute(
+        select(Session).where(
+            Session.id == session_uuid,
+            Session.user_id == user_id,
+            Session.is_active == True
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        return False
+
+    await persist_messages(session_id, db)
+
+    await db.execute(
+        update(Session)
+        .where(Session.id == session_uuid)
+        .values(is_active=False)
+    )
+    await db.commit()
+
+    await clear_session(session_id)
+
+    logger.info(
+        f"Sesión eliminada (soft delete) — "
+        f"session: {session_id} | user: {user_id}"
+    )
+    return True
