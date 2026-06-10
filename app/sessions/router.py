@@ -1,0 +1,51 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, func as sqlfunc
+from pydantic import BaseModel
+from loguru import logger
+import uuid
+from app.db.database import get_db
+from app.db.models import Session, Message, User
+from app.middleware.auth import get_current_user
+from app.sessions.service import (
+    create_session,
+    persist_messages,
+    load_history,
+    list_sessions,
+    get_session_detail,
+    delete_session,
+    generate_session_title,
+)
+
+router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+class CreateSessionRequest(BaseModel):
+    model: str = "codellama"
+
+class SessionResponse(BaseModel):
+    id: str
+    title: str | None
+    model_used: str
+    is_active: bool
+    created_at: str
+    last_active_at: str
+
+@router.post("", response_model=SessionResponse)
+async def post_session(
+    body: CreateSessionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = await create_session(
+        user_id=current_user.id,
+        model=body.model,
+        db=db
+    )
+    return SessionResponse(
+        id=str(session.id),
+        title=session.title,
+        model_used=session.model_used,
+        is_active=session.is_active,
+        created_at=str(session.created_at),
+        last_active_at=str(session.last_active_at),
+    )

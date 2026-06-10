@@ -71,3 +71,24 @@ async def load_history(session_id: str, db: AsyncSession) -> list[dict]:
     except Exception as e:
         logger.error(f"Error al cargar historial de sesión {session_id}: {e}")
         return []
+
+async def create_session(
+    user_id: int,
+    model: str,
+    db: AsyncSession
+) -> Session:
+    """
+    Crea una nueva sesión vacía para el usuario autenticado.
+    El título se genera automáticamente con el primer mensaje (Tarea 9).
+    """
+    session = Session(
+        user_id=user_id,
+        model_used=model,
+        title="Nueva sesión",
+        is_active=True,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    logger.info(f"Sesión creada — user_id: {user_id} | session: {session.id}")
+    return session
