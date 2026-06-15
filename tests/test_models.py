@@ -18,7 +18,7 @@ async def test_get_models_ollama_disponible(client: AsyncClient, regular_user: U
     """GET /models debe retornar lista de modelos cuando Ollama responde."""
     with patch(
         "app.models.router.fetch_available_models",
-        return_value=["codellama", "llama2"]
+        return_value=["gemma4:26b", "llama2"]
     ):
         response = await client.get(
             "/models",
@@ -27,7 +27,7 @@ async def test_get_models_ollama_disponible(client: AsyncClient, regular_user: U
     assert response.status_code == 200
     data = response.json()
     assert "models" in data
-    assert "codellama" in data["models"]
+    assert "gemma4:26b" in data["models"]
 
 @pytest.mark.asyncio
 async def test_get_models_ollama_caido(client: AsyncClient, regular_user: User):
@@ -61,7 +61,7 @@ async def test_get_default_model(client: AsyncClient, regular_user: User):
     assert response.status_code == 200
     data = response.json()
     assert "default_model" in data
-    assert data["default_model"] == "codellama"
+    assert data["default_model"] == "gemma4:26b"
 
 @pytest.mark.asyncio
 async def test_get_default_model_sin_token(client: AsyncClient):

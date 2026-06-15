@@ -15,6 +15,6 @@ class Settings(BaseSettings):
     redis_password: str = ""
     redis_ttl_hours: int = 24
     # Ollama
-    ollama_base_url: str = "http://localhost:11434"
+    ollama_base_url: str = "http://200.27.101.243:11434"
 
 settings = Settings()

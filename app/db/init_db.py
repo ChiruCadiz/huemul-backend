@@ -51,8 +51,8 @@ async def init_db():
         existing2 = r2.scalar_one_or_none()
 
         if not existing2:
-            # No existe → lo insertamos con codellama como defecto
-            session.add(models.Config(key="default_model", value="codellama"))
+            # No existe → lo insertamos con gemma4:26b como defecto
+            session.add(models.Config(key="default_model", value="gemma4:26b"))
             await session.commit()
             logger.info("default_model insertado con valor por defecto.")
         else:

@@ -38,7 +38,7 @@ async def setup_db():
 
     async with AsyncSessionTest() as session:
         session.add(Config(key="system_prompt", value="Prompt de prueba."))
-        session.add(Config(key="default_model", value="codellama"))
+        session.add(Config(key="default_model", value="gemma4:26b"))
         await session.commit()
 
     yield

@@ -16,7 +16,7 @@ def get_headers(user: User) -> dict:
 CHAT_PAYLOAD = {
     "session_id": "test-chat-001",
     "message": "¿Qué es Python?",
-    "model": "codellama",
+    "model": "gemma4:26b",
     "mode": "analysis"
 }
 

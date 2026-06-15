@@ -20,7 +20,7 @@ from app.sessions.service import (
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 class CreateSessionRequest(BaseModel):
-    model: str = "codellama"
+    model: str = "gemma4:26b"
 
 class SessionResponse(BaseModel):
     id: str
