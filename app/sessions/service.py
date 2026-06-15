@@ -189,7 +189,7 @@ async def generate_session_title(
     await db.execute(
         update(Session)
         .where(Session.id == session_uuid)
-        .values(title=title, last_active_at=sqlfunc.now())
+        .values(title=title, last_active_at=func.now())
     )
     await db.commit()
     logger.debug(f"Título generado — session: {session_id} | título: '{title}'")
