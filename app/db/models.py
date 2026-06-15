@@ -28,7 +28,7 @@ class Session(Base):
     id             = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id        = Column(Integer, ForeignKey("users.id"), nullable=False)
     title          = Column(String(255), nullable=True)
-    model_used     = Column(String(100), nullable=False, default="codellama")
+    model_used     = Column(String(100), nullable=False, default="gemma4:26b")
     is_active      = Column(Boolean, default=True, nullable=False)
     created_at     = Column(DateTime, server_default=func.now())
     last_active_at = Column(DateTime, server_default=func.now())
