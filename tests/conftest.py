@@ -13,6 +13,7 @@ from app.main import app
 from app.db.database import Base, get_db
 from app.db.models import User, Config
 from app.auth.jwt import create_access_token
+from app.memory.session import clear_session
 
 # ── Base de datos en memoria para tests ───────────────────────
 DATABASE_URL_TEST = "sqlite+aiosqlite:///:memory:"
@@ -38,7 +39,7 @@ async def setup_db():
 
     async with AsyncSessionTest() as session:
         session.add(Config(key="system_prompt", value="Prompt de prueba."))
-        session.add(Config(key="default_model", value="gemma4:26b"))
+        session.add(Config(key="default_model", value="gemma4:26b"))  # ← actualizado
         await session.commit()
 
     yield
@@ -48,17 +49,12 @@ async def setup_db():
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_redis():
-    """
-    Crea una conexión Redis fresca por test para evitar
-    el error 'Event loop is closed' del singleton.
-    """
+    """Limpia claves de test en Redis antes y después de cada test."""
     r = redis_lib.Redis(host="localhost", port=6379, decode_responses=True)
-    # Limpia claves de test antes del test
     keys = await r.keys("session:test-*")
     if keys:
         await r.delete(*keys)
     yield
-    # Limpia claves de test después del test
     keys = await r.keys("session:test-*")
     if keys:
         await r.delete(*keys)
@@ -71,6 +67,23 @@ async def client():
         base_url="http://test"
     ) as c:
         yield c
+
+@pytest_asyncio.fixture
+async def db_session():
+    """Sesión de BD directa para testear funciones de service.py sin pasar por HTTP."""
+    async with AsyncSessionTest() as session:
+        yield session
+
+@pytest_asyncio.fixture
+async def session_cleanup():
+    """Acumula UUIDs de sesiones creadas en tests para limpiar Redis al finalizar."""
+    ids = []
+    yield ids
+    if ids:
+        r = redis_lib.Redis(host="localhost", port=6379, decode_responses=True)
+        for sid in ids:
+            await r.delete(f"session:{sid}")
+        await r.aclose()
 
 @pytest_asyncio.fixture
 async def admin_user():
@@ -91,6 +104,20 @@ async def regular_user():
         user = User(
             username="estudiante",
             email="estudiante@uandresbello.edu",
+            role="user"
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+@pytest_asyncio.fixture
+async def second_user():
+    """Segundo usuario para tests de aislamiento entre sesiones."""
+    async with AsyncSessionTest() as session:
+        user = User(
+            username="otro_estudiante",
+            email="otro@unab.cl",
             role="user"
         )
         session.add(user)
