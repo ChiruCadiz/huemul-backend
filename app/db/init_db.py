@@ -58,3 +58,14 @@ async def init_db():
         else:
             # Ya existe → logueamos el valor actual para confirmación
             logger.info(f"default_model encontrado: {existing2.value}")
+        
+        # Límite de contexto configurable
+        r3 = await session.execute(
+            select(models.Config).where(models.Config.key == "max_context_chars")
+        )
+        if not r3.scalar_one_or_none():
+            session.add(models.Config(key="max_context_chars", value="12000"))
+            await session.commit()
+            logger.info("max_context_chars insertado con valor por defecto.")
+        else:
+            logger.info("max_context_chars ya configurado.")

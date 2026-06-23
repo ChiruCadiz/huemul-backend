@@ -10,7 +10,10 @@ from app.middleware.auth import get_current_user
 from app.memory.session import get_session_history, append_to_history
 from app.chat.prompt_builder import build_prompt
 from app.chat.service import stream_ollama
-from app.sessions.service import generate_session_title, persist_messages  # ← nuevo
+from app.sessions.service import generate_session_title, persist_messages 
+from app.config import get_max_context 
+import json as json_lib
+from app.memory.redis_client import get_redis
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -41,30 +44,39 @@ async def chat_message(
         f"session: {body.session_id} | model: {body.model} | mode: {body.mode}"
     )
 
-    # 1. Recuperar historial desde Redis
-    history = await get_session_history(body.session_id)
-
-    # 2. Recuperar system prompt institucional
+    history       = await get_session_history(body.session_id)
     system_prompt = await get_system_prompt(db)
 
-    # 3. Construir prompt completo
-    files = [{"filename": f.filename, "content": f.content} for f in body.files]
+    # ── Archivos del request + contexto guardado en Redis ──
+    request_files = [{"filename": f.filename, "content": f.content} for f in body.files]
+
+    redis = await get_redis()
+    context_key = f"context:{body.session_id}"
+    stored_raw  = await redis.get(context_key)
+    stored_files = json_lib.loads(stored_raw) if stored_raw else []
+
+    # Combinar: archivos del request primero, luego contexto almacenado
+    all_files = request_files + [
+        f for f in stored_files
+        if f["filename"] not in {rf["filename"] for rf in request_files}
+    ]
+
+    max_ctx = await get_max_context(db)  
+
     prompt = build_prompt(
         system_prompt=system_prompt,
         history=history,
         message=body.message,
-        files=files if files else None,
+        files=all_files if all_files else None,
         mode=body.mode,
+        max_context_chars=max_ctx,
     )
 
-    # 4. Guardar mensaje del usuario en Redis
     await append_to_history(body.session_id, "user", body.message)
 
-    # 5. Generar título automático en el primer mensaje  ← nuevo
     if not history:
         await generate_session_title(body.session_id, body.message, db)
 
-    # 6. Streaming de respuesta + guardar respuesta completa al terminar
     full_response = []
 
     async def generate():
@@ -73,7 +85,7 @@ async def chat_message(
             yield token
         complete = "".join(full_response)
         await append_to_history(body.session_id, "assistant", complete)
-        await persist_messages(body.session_id, db)  # ← nuevo
+        await persist_messages(body.session_id, db)
         logger.info(
             f"Respuesta completada — session: {body.session_id} | chars: {len(complete)}"
         )

@@ -16,6 +16,9 @@ from app.sessions.service import (
     delete_session,
     generate_session_title,
 )
+from app.sessions.context import SessionContextRequest
+from app.chat.prompt_builder import _order_files, _truncate_files, MAX_CONTEXT_CHARS
+from app.config import get_max_context
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -100,4 +103,41 @@ async def delete_session_endpoint(
     return {
         "message": "Sesión eliminada correctamente.",
         "session_id": session_id
+    }
+
+@router.post("/{session_id}/context")
+async def set_session_context(
+    session_id: str,
+    body: SessionContextRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Guarda los archivos de contexto de la sesión en Redis.
+    Se llama desde la extensión al seleccionar archivos manualmente
+    o al incluir el proyecto completo.
+    """
+    import json
+    from app.memory.redis_client import get_redis
+
+    # Obtener límite dinámico desde BD
+    max_chars = await get_max_context(db)
+
+    # Ordenar y truncar archivos
+    ordered   = _order_files([f.dict() for f in body.files])
+    truncated = _truncate_files(ordered, max_chars)
+
+    redis = await get_redis()
+    key   = f"context:{session_id}"
+    await redis.setex(key, 86400, json.dumps(truncated))
+
+    logger.info(
+        f"Contexto guardado — session: {session_id} | "
+        f"archivos: {len(truncated)}/{len(body.files)}"
+    )
+    return {
+        "session_id": session_id,
+        "files_received": len(body.files),
+        "files_stored": len(truncated),
+        "files": [f["filename"] for f in truncated],
     }
