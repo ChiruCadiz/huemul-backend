@@ -6,6 +6,9 @@ from loguru import logger
 from app.db.database import get_db
 from app.db.models import Config, User
 from app.middleware.auth import require_admin
+from app.auth.password_service import hash_password
+from app.auth.jwt import get_current_user
+import secrets
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -74,3 +77,46 @@ async def update_user_role(
         f"| nuevo rol: {role} | por: {current_user.email}"
     )
     return {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    role: str = "user"
+
+@router.post("/users")
+async def create_user(
+    body: CreateUserRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores.")
+
+    email = body.email.strip().lower()
+    if not (email.endswith("@uandresbello.edu") or email.endswith("@unab.cl")):
+        raise HTTPException(400, "Solo correos institucionales.")
+
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "El correo ya está registrado.")
+
+    # Contraseña temporal de 12 caracteres
+    temp_password = secrets.token_urlsafe(9)  # genera ~12 chars
+
+    username = email.split("@")[0]
+    user = User(
+        username=username,
+        email=email,
+        password_hash=hash_password(temp_password),
+        role=body.role,
+        must_change_password=True,  # ← obliga cambio en primer login
+    )
+    db.add(user)
+    await db.commit()
+
+    logger.info(f"Admin {current_user.email} creó cuenta para {email}")
+    # Devolver la contraseña temporal SOLO en esta respuesta — no se guarda en texto plano
+    return {
+        "message": f"Cuenta creada para {email}",
+        "temp_password": temp_password,
+    }

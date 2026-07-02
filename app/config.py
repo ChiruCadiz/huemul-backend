@@ -11,18 +11,24 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 8
     environment: str = "development"
-    # Redis
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_password: str = ""
     redis_ttl_hours: int = 24
-    # Ollama
     ollama_base_url: str = "http://200.27.101.243:11434"
+
+    # ── Nuevo: SMTP para recuperación de contraseña ────────
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
 
 settings = Settings()
 
-async def get_max_context(db: AsyncSession) -> int:
+async def get_max_context(db) -> int:
     from app.db.models import Config
+    from sqlalchemy import select
     result = await db.execute(
         select(Config).where(Config.key == "max_context_chars")
     )

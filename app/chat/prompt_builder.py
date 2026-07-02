@@ -108,3 +108,48 @@ def _truncate_files(files: list[dict], max_chars: int) -> list[dict]:
         # Los archivos secundarios que no caben se descartan
 
     return result
+
+def build_diff_prompt(
+    system_prompt: str,
+    filename: str,
+    content: str,
+    instruction: str,
+) -> str:
+    return "\n\n".join([
+        f"[INSTRUCCIONES DEL SISTEMA]\n{system_prompt}",
+        "[MODO SUGERENCIA — DIFF UNIFICADO]\n"
+        "Responde ÚNICAMENTE con un bloque diff en formato unificado (unified diff).\n"
+        "No incluyas explicaciones fuera del bloque diff.\n"
+        "Usa exactamente este formato:\n"
+        "```diff\n"
+        "--- a/nombre_archivo\n"
+        "+++ b/nombre_archivo\n"
+        "@@ -línea,cantidad +línea,cantidad @@\n"
+        "-línea eliminada\n"
+        "+línea agregada\n"
+        "```",
+        f"[ARCHIVO A MODIFICAR]\n── {filename} ──\n```\n{content}\n```",
+        f"[INSTRUCCIÓN DEL USUARIO]\n{instruction}",
+        "Asistente:",
+    ])
+
+
+def build_edit_prompt(
+    system_prompt: str,
+    filename: str,
+    content: str,
+    instruction: str,
+) -> str:
+    return "\n\n".join([
+        f"[INSTRUCCIONES DEL SISTEMA]\n{system_prompt}",
+        "[MODO EDICIÓN DIRECTA]\n"
+        "Responde ÚNICAMENTE con el archivo completo modificado dentro de un bloque de código.\n"
+        "No incluyas explicaciones antes ni después del bloque.\n"
+        "Usa exactamente este formato:\n"
+        "```\n"
+        "contenido completo del archivo modificado\n"
+        "```",
+        f"[ARCHIVO A MODIFICAR]\n── {filename} ──\n```\n{content}\n```",
+        f"[INSTRUCCIÓN DEL USUARIO]\n{instruction}",
+        "Asistente:",
+    ])

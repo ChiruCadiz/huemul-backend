@@ -11,6 +11,8 @@ from app.memory.session import get_session_history, append_to_history
 from app.chat.prompt_builder import build_prompt
 from app.chat.service import stream_ollama
 from app.sessions.service import generate_session_title, persist_messages 
+from app.chat.edit_service import extract_diff, extract_code
+from app.chat.prompt_builder import build_diff_prompt, build_edit_prompt
 from app.config import get_max_context 
 import json as json_lib
 from app.memory.redis_client import get_redis
@@ -91,3 +93,78 @@ async def chat_message(
         )
 
     return StreamingResponse(generate(), media_type="text/plain")
+
+
+class EditRequest(BaseModel):
+    session_id: str
+    message: str
+    model: str
+    filename: str
+    content: str  # contenido actual del archivo
+
+@router.post("/suggest")
+async def chat_suggest(
+    body: EditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sugiere cambios en formato diff unificado."""
+    logger.info(f"Suggest — user: {current_user.email} | file: {body.filename}")
+    system_prompt = await get_system_prompt(db)
+    prompt = build_diff_prompt(
+        system_prompt=system_prompt,
+        filename=body.filename,
+        content=body.content,
+        instruction=body.message,
+    )
+    full_response = []
+    async for token in stream_ollama(model=body.model, prompt=prompt):
+        full_response.append(token)
+    response_text = "".join(full_response)
+    diff = extract_diff(response_text)
+
+    # ── NUEVO: persistir en el historial ──────────────────
+    user_message = f"[Sugerir] {body.message} (archivo: {body.filename})"
+    await append_to_history(body.session_id, "user", user_message)
+    assistant_message = diff if diff else response_text
+    await append_to_history(body.session_id, "assistant", assistant_message)
+    await persist_messages(body.session_id, db)
+    # ────────────────────────────────────────────────────────
+
+    if not diff:
+        return { "filename": body.filename, "diff": None, "raw": response_text }
+    return { "filename": body.filename, "diff": diff }
+
+
+@router.post("/edit")
+async def chat_edit(
+    body: EditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Retorna el archivo completo modificado."""
+    logger.info(f"Edit — user: {current_user.email} | file: {body.filename}")
+    system_prompt = await get_system_prompt(db)
+    prompt = build_edit_prompt(
+        system_prompt=system_prompt,
+        filename=body.filename,
+        content=body.content,
+        instruction=body.message,
+    )
+    full_response = []
+    async for token in stream_ollama(model=body.model, prompt=prompt):
+        full_response.append(token)
+    response_text = "".join(full_response)
+    new_content = extract_code(response_text)
+
+    # ── NUEVO: persistir en el historial ──────────────────
+    user_message = f"[Editar] {body.message} (archivo: {body.filename})"
+    await append_to_history(body.session_id, "user", user_message)
+    assistant_message = new_content if new_content else response_text
+    await append_to_history(body.session_id, "assistant", assistant_message)
+    await persist_messages(body.session_id, db)
+    # ────────────────────────────────────────────────────────
+
+    if not new_content:
+        return { "filename": body.filename, "newContent": None, "raw": response_text }
+    return { "filename": body.filename, "newContent": new_content }
